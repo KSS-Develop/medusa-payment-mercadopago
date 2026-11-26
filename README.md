@@ -1,5 +1,7 @@
 # @ia-erp/medusa-payment-mercadopago
 
+[![npm](https://img.shields.io/npm/v/@ia-erp/medusa-payment-mercadopago)](https://www.npmjs.com/package/@ia-erp/medusa-payment-mercadopago) [![CI](https://github.com/KSS-Develop/medusa-payment-mercadopago/actions/workflows/ci.yml/badge.svg)](https://github.com/KSS-Develop/medusa-payment-mercadopago/actions/workflows/ci.yml)
+
 Mercado Pago **Checkout Pro** para **Medusa v2**: Chile, Brasil y Argentina en un solo paquete. Hecho por
 [IA ERP](https://ia-erp.cl), desarrollador certificado de Mercado Pago (Partners Program, Checkout Pro).
 

@@ -1,6 +1,6 @@
 {
   "name": "@ia-erp/medusa-payment-mercadopago",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Mercado Pago Checkout Pro para Medusa v2: Chile, Brasil y Argentina en un solo paquete (un proveedor por país), con webhooks firmados y reembolsos. Hecho por IA ERP, desarrollador certificado de Mercado Pago.",
   "author": "IA ERP <support@ia-erp.cl>",
   "license": "MIT",
