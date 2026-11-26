@@ -1,0 +1,26 @@
+# Publica @ia-erp/medusa-mercadopago-storefront al crear un release con etiqueta storefront-vX.Y.Z (trusted publishing).
+name: Publish storefront
+on:
+  release:
+    types: [published]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish:
+    if: startsWith(github.event.release.tag_name, 'storefront-v')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: storefront
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@latest
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - run: npm test
+      - run: npm publish
