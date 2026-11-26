@@ -18,7 +18,7 @@ Mercado Pago **Checkout Pro** para **Medusa v2**: Argentina, Brasil, Chile, Colo
 ## Starters listos
 
 - **Next.js** (Medusa DTC Starter con Mercado Pago, backend y tienda): https://github.com/KSS-Develop/medusa-mercadopago-starter-nextjs
-- **Astro 7** (tienda liviana renderizada en el servidor): https://github.com/KSS-Develop/medusa-mercadopago-starter-astro
+- **Astro 7** (backend Medusa y tienda liviana renderizada en el servidor): https://github.com/KSS-Develop/medusa-mercadopago-starter-astro
 
 ## Instalar
 
