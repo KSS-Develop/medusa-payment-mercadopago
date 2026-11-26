@@ -1,6 +1,6 @@
 {
   "name": "@ia-erp/medusa-mercadopago-storefront",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Botón y página de retorno de Mercado Pago Checkout Pro para storefronts de Medusa v2 (React y Next.js), para usar con @ia-erp/medusa-payment-mercadopago.",
   "author": "IA ERP <support@ia-erp.cl>",
   "license": "MIT",
