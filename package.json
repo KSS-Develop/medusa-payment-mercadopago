@@ -1,0 +1,68 @@
+{
+  "name": "@ia-erp/medusa-payment-mercadopago",
+  "version": "0.1.0",
+  "description": "Mercado Pago Checkout Pro para Medusa v2: Chile, Brasil y Argentina en un solo paquete (un proveedor por país), con webhooks firmados y reembolsos. Hecho por IA ERP, desarrollador certificado de Mercado Pago.",
+  "author": "IA ERP <support@ia-erp.cl>",
+  "license": "MIT",
+  "keywords": [
+    "medusa",
+    "medusa-v2",
+    "medusa-plugin",
+    "medusa-plugin-payment",
+    "medusa-payment",
+    "mercadopago",
+    "mercado-pago",
+    "checkout-pro",
+    "chile",
+    "brasil",
+    "argentina",
+    "pix"
+  ],
+  "files": [
+    ".medusa/server",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    "./providers/*": "./.medusa/server/src/providers/*/index.js",
+    "./*": "./.medusa/server/src/*.js"
+  },
+  "scripts": {
+    "build": "medusa plugin:build",
+    "dev": "medusa plugin:develop",
+    "prepublishOnly": "medusa plugin:build",
+    "test": "node --experimental-strip-types --no-warnings --test test/*.test.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "mercadopago": "^2.13.0"
+  },
+  "peerDependencies": {
+    "@medusajs/framework": ">=2.11.0",
+    "@medusajs/medusa": ">=2.11.0"
+  },
+  "devDependencies": {
+    "@medusajs/cli": "2.22.6",
+    "@medusajs/framework": "2.22.6",
+    "@medusajs/medusa": "2.22.6",
+    "@swc/core": "1.7.28",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KSS-Develop/medusa-payment-mercadopago.git"
+  },
+  "homepage": "https://github.com/KSS-Develop/medusa-payment-mercadopago#readme",
+  "bugs": {
+    "url": "https://github.com/KSS-Develop/medusa-payment-mercadopago/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
