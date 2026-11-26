@@ -1,6 +1,6 @@
 {
   "name": "@ia-erp/medusa-payment-mercadopago",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Mercado Pago Checkout Pro para Medusa v2: Argentina, Brasil, Chile, Colombia, México, Perú y Uruguay (un proveedor por país), con webhooks firmados y reembolsos. Hecho por IA ERP, desarrollador certificado de Mercado Pago.",
   "author": "IA ERP <support@ia-erp.cl>",
   "license": "MIT",
@@ -30,6 +30,13 @@
   "exports": {
     "./package.json": "./package.json",
     "./providers/*": "./.medusa/server/src/providers/*/index.js",
+    "./.medusa/server/src/modules/*": "./.medusa/server/src/modules/*/index.js",
+    "./modules/*": "./.medusa/server/src/modules/*/index.js",
+    "./admin": {
+      "import": "./.medusa/server/src/admin/index.mjs",
+      "require": "./.medusa/server/src/admin/index.js",
+      "default": "./.medusa/server/src/admin/index.js"
+    },
     "./*": "./.medusa/server/src/*.js"
   },
   "scripts": {
@@ -46,15 +53,24 @@
     "mercadopago": "^2.13.0"
   },
   "peerDependencies": {
+    "@medusajs/admin-sdk": ">=2.11.0",
     "@medusajs/framework": ">=2.11.0",
-    "@medusajs/medusa": ">=2.11.0"
+    "@medusajs/medusa": ">=2.11.0",
+    "@medusajs/ui": ">=4.0.0"
   },
   "devDependencies": {
+    "@medusajs/admin-sdk": "^2.22.6",
     "@medusajs/cli": "2.22.6",
     "@medusajs/framework": "2.22.6",
+    "@medusajs/icons": "^2.22.6",
     "@medusajs/medusa": "2.22.6",
+    "@medusajs/ui": "^4.2.13",
     "@swc/core": "1.7.28",
     "@types/node": "^22.0.0",
+    "@types/react": "^18.3.32",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "ts-node": "^10.9.2",
     "typescript": "^5.6.2"
   },
   "repository": {

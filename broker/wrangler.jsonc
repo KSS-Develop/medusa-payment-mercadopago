@@ -1,0 +1,14 @@
+{
+  // Intermediario OAuth de «Conectar con Mercado Pago» para el plugin @ia-erp/medusa-payment-mercadopago.
+  // Guarda el client_secret de la aplicación de IA ERP en Mercado Pago; no almacena nada: el estado y las llaves van
+  // cifrados (AES-GCM) y sólo los descifra la tienda que inició la conexión (verificador PKCE propio).
+  "name": "ia-erp-mercadopago-oauth",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "ia-erp.cl/mercadopago/oauth*", "zone_name": "ia-erp.cl" }],
+  // Secretos (wrangler secret put): MP_APPS = {"CL":{"id":"…","secret":"…"}, "*":{…}} y CLAVE_ESTADO (32 bytes base64).
+  "vars": { "ORIGEN": "https://ia-erp.cl", "RUTA": "/mercadopago/oauth" },
+  "observability": { "enabled": true }
+}

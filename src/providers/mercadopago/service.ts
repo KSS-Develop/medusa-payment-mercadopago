@@ -35,16 +35,19 @@ import { accionWebhook, estadoSesion, pagoVigente } from "../../lib/estado"
 import { firmaValida } from "../../lib/firma"
 import { iguales, redondear } from "../../lib/monto"
 import { INTEGRATOR_ID_IA_ERP, PAISES, esPais, type Pais } from "../../lib/pais"
+import { registro } from "../../lib/registro"
 
 type InjectedDependencies = { logger: Logger }
 
 export type Options = {
   // País de la cuenta de Mercado Pago: AR, BR, CL, CO, MX, PE o UY.
   country: Pais
-  // Access Token de producción de la cuenta del vendedor (empieza con APP_USR-).
-  access_token: string
-  // Clave secreta de webhooks de la aplicación (panel → Webhooks), para verificar x-signature.
-  webhook_secret: string
+  // Access Token de producción de la cuenta del vendedor (empieza con APP_USR-). Opcional: sin él se usa la cuenta
+  // conectada con «Conectar con Mercado Pago» (módulo mercadopagoConexion).
+  access_token?: string
+  // Clave secreta de webhooks de la aplicación (panel → Webhooks), para verificar x-signature. Con la cuenta conectada
+  // no existe (los avisos los firma la aplicación de IA ERP): el pago se vuelve a leer siempre desde la API.
+  webhook_secret?: string
   // Páginas del storefront a las que vuelve el comprador. {session_id} se reemplaza por el id de la sesión.
   return_url: string
   failure_url?: string
@@ -122,9 +125,10 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
 
   protected logger_: Logger
   protected options_: Options
+  protected vistos_ = new Map<string, number>()
 
   static validateOptions(options: Record<string, unknown>): void {
-    const faltan = ["country", "access_token", "webhook_secret", "return_url"].filter((k) => !texto(options[k]))
+    const faltan = ["country", "return_url"].filter((k) => !texto(options[k]))
     if (faltan.length) {
       throw new MedusaError(MedusaError.Types.INVALID_DATA, `Mercado Pago: faltan opciones ${faltan.join(", ")}`)
     }
@@ -137,13 +141,16 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
     super(container, options)
     this.logger_ = container.logger
     this.options_ = { max_installments: 12, integrator_id: INTEGRATOR_ID_IA_ERP, ...options }
+    if (options.access_token && !options.webhook_secret) {
+      this.logger_.warn(`Mercado Pago ${options.country}: sin webhook_secret no se verifica la firma de los avisos`)
+    }
   }
 
   // Cliente nuevo por operación: el SDK guarda las opciones de cada llamada (incluida la llave de
   // idempotencia) en la configuración compartida, y reutilizarla mezclaría llaves entre operaciones.
-  protected sdk(): Sdk {
+  protected async sdk(): Promise<Sdk> {
     const config = new MercadoPagoConfig({
-      accessToken: this.options_.access_token,
+      accessToken: await this.llave(),
       options: { integratorId: this.options_.integrator_id, timeout: 15000 },
     })
     return {
@@ -152,6 +159,27 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
       reembolsos: new PaymentRefund(config),
       ordenes: new MerchantOrder(config),
     }
+  }
+
+  // Llave del vendedor: la de la configuración o la de la cuenta conectada desde el admin.
+  private async llave(): Promise<string> {
+    if (this.options_.access_token) return this.options_.access_token
+    const c = await registro.fuente?.credenciales(this.options_.country)
+    if (!c) {
+      throw new MedusaError(
+        MedusaError.Types.NOT_ALLOWED,
+        `Mercado Pago ${this.options_.country} no está conectado: Configuración → Mercado Pago → Conectar con Mercado Pago`
+      )
+    }
+    return c.access_token
+  }
+
+  // URL del webhook en cada preferencia: la configurada o, con la cuenta conectada, la del backend que la conectó.
+  private async avisos(): Promise<string | undefined> {
+    if (this.options_.notification_url) return soloWebhooks(this.options_.notification_url)
+    if (this.options_.access_token) return undefined
+    const c = await registro.fuente?.credenciales(this.options_.country)
+    return c?.origen ? soloWebhooks(`${c.origen}/hooks/payment/mercadopago_${this.options_.country.toLowerCase()}`) : undefined
   }
 
   private moneda(): string {
@@ -181,19 +209,20 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
     return { id: sesion, title: "Pedido", quantity: 1, currency_id: moneda.toUpperCase(), unit_price: monto }
   }
 
-  private preferencia(sesion: string, monto: number, moneda: string): PreferenceRequest {
+  private preferencia(sesion: string, monto: number, moneda: string, avisos?: string): PreferenceRequest {
     const o = this.options_
     return {
       items: [this.item(sesion, monto, moneda)],
       external_reference: sesion,
       metadata: { session_id: sesion },
-      notification_url: o.notification_url ? soloWebhooks(o.notification_url) : undefined,
+      notification_url: avisos,
       back_urls: {
         success: conSesion(o.return_url, sesion),
         failure: conSesion(o.failure_url ?? o.return_url, sesion),
         pending: conSesion(o.pending_url ?? o.return_url, sesion),
       },
-      auto_return: "approved",
+      // Mercado Pago sólo acepta la vuelta automática con páginas https (en desarrollo local se omite).
+      auto_return: o.return_url.startsWith("https://") ? "approved" : undefined,
       statement_descriptor: o.statement_descriptor,
       payment_methods: {
         installments: o.max_installments,
@@ -207,7 +236,7 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
   // no trae nada, por la orden de la preferencia. Prefiere un pago vigente; si no, el más reciente.
   protected async pagoDeSesion(d: Datos, reintentar = true): Promise<PaymentResponse | undefined> {
     if (!d.session_id) return undefined
-    const { pagos, ordenes } = this.sdk()
+    const { pagos, ordenes } = (await this.sdk())
     const ids: string[] = []
     for (let intento = 0; intento < (reintentar ? 2 : 1) && !ids.length; intento++) {
       if (intento) await espera(1500)
@@ -234,7 +263,7 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
   // reintentar con otro pago en la misma preferencia.
   private async pagoActual(d: Datos): Promise<PaymentResponse | undefined> {
     if (d.payment_id && pagoVigente(d.status)) {
-      const pago = await this.sdk().pagos.get({ id: d.payment_id })
+      const pago = await (await this.sdk()).pagos.get({ id: d.payment_id })
       if (pagoVigente(pago.status)) return pago
     }
     return this.pagoDeSesion(d)
@@ -269,8 +298,8 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
     this.comprobarMoneda(moneda)
     const monto = this.monto(input.amount, moneda)
     try {
-      const pref = await this.sdk().preferencias.create({
-        body: this.preferencia(sesion, monto, moneda),
+      const pref = await (await this.sdk()).preferencias.create({
+        body: this.preferencia(sesion, monto, moneda, await this.avisos()),
         requestOptions: { idempotencyKey: input.context?.idempotency_key ?? sesion },
       })
       if (!pref.id || !pref.init_point) throw new Error("la preferencia no trae id o init_point")
@@ -299,7 +328,7 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
     // para que la autorización detecte que lo pagado ya no cuadra.
     if (d.payment_id && pagoVigente(d.status)) return { data: { ...input.data, ...d, amount: monto } }
     try {
-      await this.sdk().preferencias.update({
+      await (await this.sdk()).preferencias.update({
         id: d.preference_id,
         updatePreferenceRequest: { items: [this.item(d.session_id, monto, moneda)] },
         requestOptions: { idempotencyKey: randomUUID() },
@@ -331,7 +360,7 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
     const d = leerDatos(input.data)
     if (!d.payment_id || d.status !== "authorized") return { data: { ...d } }
     try {
-      const pago = await this.sdk().pagos.capture({
+      const pago = await (await this.sdk()).pagos.capture({
         id: d.payment_id,
         requestOptions: { idempotencyKey: input.context?.idempotency_key ?? `captura-${d.payment_id}` },
       })
@@ -354,7 +383,7 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
     const cancelable = d.status === "pending" || d.status === "in_process" || d.status === "authorized"
     if (!d.payment_id || !cancelable) return { data: { ...d } }
     try {
-      const pago = await this.sdk().pagos.cancel({
+      const pago = await (await this.sdk()).pagos.cancel({
         id: d.payment_id,
         requestOptions: { idempotencyKey: input.context?.idempotency_key ?? `anulacion-${d.payment_id}` },
       })
@@ -370,7 +399,7 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
     const moneda = d.currency_code ?? this.moneda()
     let r
     try {
-      r = await this.sdk().reembolsos.create({
+      r = await (await this.sdk()).reembolsos.create({
         payment_id: d.payment_id,
         body: { amount: this.monto(input.amount, moneda) },
         requestOptions: { idempotencyKey: input.context?.idempotency_key ?? randomUUID() },
@@ -391,7 +420,7 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
     const cobrada = d.payment_id && pagoVigente(d.status) && d.status_detail !== "monto_o_moneda_distintos"
     if (!d.preference_id || cobrada) return { data: input.data }
     try {
-      await this.sdk().preferencias.update({
+      await (await this.sdk()).preferencias.update({
         id: d.preference_id,
         // La API acepta actualizaciones parciales; el tipo del SDK exige items sin necesitarlos.
         updatePreferenceRequest: { expires: true, expiration_date_to: new Date().toISOString() } as PreferenceRequest,
@@ -419,7 +448,7 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
     const d = leerDatos(input.data)
     if (!d.payment_id) return { data: { ...d } }
     try {
-      const pago = await this.sdk().pagos.get({ id: d.payment_id })
+      const pago = await (await this.sdk()).pagos.get({ id: d.payment_id })
       return {
         data: {
           ...this.conPago(d, pago),
@@ -453,24 +482,38 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
     const tipo = cuerpo.type ?? cuerpo.topic
     const dataId = cuerpo.data?.id !== undefined ? String(cuerpo.data.id) : undefined
     // merchant_order, avisos IPN viejos y otros tópicos no traen data.id de un pago: se ignoran sin ruido.
-    if (tipo !== "payment" || !dataId) return { action: PaymentActions.NOT_SUPPORTED }
+    if (tipo !== "payment" || !dataId || !/^\d{1,20}$/.test(dataId)) return { action: PaymentActions.NOT_SUPPORTED }
+    // Sin firma (cuenta conectada) se limita la relectura: el mismo aviso (pago + acción) se atiende una vez cada 2 s.
+    const clave = `${dataId}:${(cuerpo as { action?: string }).action ?? ""}`
+    if (!this.options_.webhook_secret && (this.vistos_.get(clave) ?? 0) > Date.now()) {
+      return { action: PaymentActions.NOT_SUPPORTED }
+    }
     const encabezado = (n: string): string | undefined => {
       const v = payload.headers?.[n]
       return Array.isArray(v) ? v[0] : typeof v === "string" ? v : undefined
     }
-    const ok = firmaValida({
-      secreto: this.options_.webhook_secret,
-      encabezado: encabezado("x-signature"),
-      requestId: encabezado("x-request-id"),
-      dataId,
-    })
+    // Con webhook_secret se exige la firma. Sin él (cuenta conectada) no hay secreto propio que verificar: el aviso
+    // sólo sirve de señal y el pago, su sesión y su monto se leen siempre de la API con la llave del vendedor.
+    const ok =
+      !this.options_.webhook_secret ||
+      firmaValida({
+        secreto: this.options_.webhook_secret,
+        encabezado: encabezado("x-signature"),
+        requestId: encabezado("x-request-id"),
+        dataId,
+      })
     if (!ok) {
       this.logger_.warn(`Mercado Pago: webhook del pago ${dataId} con firma inválida; se ignora`)
       return { action: PaymentActions.NOT_SUPPORTED }
     }
     let pago: PaymentResponse
     try {
-      pago = await this.sdk().pagos.get({ id: dataId })
+      pago = await (await this.sdk()).pagos.get({ id: dataId })
+      if (!this.options_.webhook_secret) {
+        const ahora = Date.now()
+        this.vistos_.set(clave, ahora + 2_000)
+        if (this.vistos_.size > 5000) for (const [k, v] of this.vistos_) if (v < ahora) this.vistos_.delete(k)
+      }
     } catch (e) {
       this.logger_.warn(`Mercado Pago: no se pudo leer el pago ${dataId} (${e instanceof Error ? e.message : "error"})`)
       return { action: PaymentActions.NOT_SUPPORTED }

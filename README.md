@@ -23,40 +23,66 @@ npm install @ia-erp/medusa-payment-mercadopago
 
 ```ts
 // medusa-config.ts
+plugins: [{ resolve: "@ia-erp/medusa-payment-mercadopago", options: {} }],
 modules: [
+  // Guarda las cuentas conectadas (llaves cifradas con MP_CONEXION_CLAVE o, si falta, JWT_SECRET).
+  { resolve: "@ia-erp/medusa-payment-mercadopago/modules/mercadopago-conexion" },
   {
     resolve: "@medusajs/medusa/payment",
     options: {
       providers: [
+        // Un proveedor por país. El id debe ser el código del país en minúsculas.
         {
           resolve: "@ia-erp/medusa-payment-mercadopago/providers/mercadopago",
           id: "cl",
           options: {
             country: "CL",
-            access_token: process.env.MP_CL_ACCESS_TOKEN,       // APP_USR-… de la cuenta del vendedor
-            webhook_secret: process.env.MP_CL_WEBHOOK_SECRET,   // «Clave secreta» de Webhooks en el panel
-            return_url: `${process.env.STOREFRONT_URL}/checkout/mercadopago?session={session_id}`,
-            statement_descriptor: "MI TIENDA",
-            max_installments: 12,
+            return_url: `${process.env.STOREFRONT_URL}/cl/checkout/mercadopago?session={session_id}`,
           },
         },
-        // Otros países: el mismo proveedor con id "br", "ar", "mx"… y country "BR", "AR", "MX"… con sus credenciales.
       ],
     },
   },
 ],
 ```
 
-Luego habilite **Mercado Pago (`pp_mercadopago_cl`)** en la región de Chile desde el panel de Medusa. Cada región debe
-cobrar en la moneda de su país.
+Variables de entorno del backend:
+
+- `MP_CONEXION_CLAVE`: clave aleatoria (al menos 24 caracteres) para cifrar las llaves guardadas. Si cambia, hay que
+  volver a conectar las cuentas.
+- `MEDUSA_BACKEND_URL`: URL pública del backend (`https://…`), a la que Mercado Pago envía los avisos de pago. Si
+  falta, se usa el host desde el que se conectó la cuenta.
+
+Luego `npx medusa db:migrate`, y en el admin:
+
+1. **Configuración → Mercado Pago → Conectar con Mercado Pago** en el país. Se inicia sesión en Mercado Pago, se
+   autoriza y listo: las llaves quedan guardadas cifradas y se renuevan solas. No hay que copiar nada ni configurar
+   webhooks: cada pago avisa al backend que conectó la cuenta.
+2. **Configuración → Regiones →** la región del país → habilitar **Mercado Pago (`pp_mercadopago_cl`)**. Cada región
+   cobra en la moneda de su país.
+
+«Conectar con Mercado Pago» está disponible en los países donde IA ERP tiene su aplicación de Mercado Pago (Mercado
+Pago no deja cobrar con una cuenta de un país conectada a una aplicación de otro). En los demás países use llaves
+propias (abajo); el admin lo indica junto a cada país.
+
+La autorización pasa por `https://ia-erp.cl/mercadopago/oauth`, que primero muestra a qué tienda se conectará la
+cuenta y guarda el secreto de la aplicación de IA ERP en Mercado Pago (no
+almacena llaves: viajan cifradas y sólo las descifra la tienda que inició la conexión). Su código
+está en `broker/`.
+
+### Con llaves propias (sin «Conectar»)
+
+Si prefiere usar las credenciales de su propia aplicación de Mercado Pago, agregue `access_token` (`APP_USR-…`) y
+`webhook_secret` a las opciones del proveedor, configure el webhook en el panel de Mercado Pago (ver «Webhook») y
+omita el módulo `mercadopago-conexion`.
 
 ### Opciones
 
 | Opción | Obligatoria | Descripción |
 |---|---|---|
 | `country` | sí | `AR` (ARS), `BR` (BRL), `CL` (CLP), `CO` (COP), `MX` (MXN), `PE` (PEN) o `UY` (UYU). Fija la moneda admitida. |
-| `access_token` | sí | Access Token de producción de la aplicación (empieza con `APP_USR-`). |
-| `webhook_secret` | sí | Clave secreta de webhooks de la aplicación. |
+| `access_token` | no | Access Token propio (`APP_USR-…`). Sin él se usa la cuenta conectada desde el admin. |
+| `webhook_secret` | no | Clave secreta de webhooks de su aplicación; con ella se exige la firma `x-signature`. |
 | `notification_url` | no | URL del webhook enviada en cada preferencia (se le agrega `source_news=webhooks`). Lo recomendado es configurarla en el panel; ver «Webhook». |
 | `return_url` | sí | Página del storefront a la que vuelve el comprador; `{session_id}` se reemplaza. |
 | `failure_url`, `pending_url` | no | Páginas para pago rechazado o pendiente (por omisión, `return_url`). |
@@ -98,6 +124,10 @@ probar con cuentas de prueba: Mercado Pago los rechaza con «Unauthorized use of
 - Un pago reembolsado o con contracargo nunca completa un carro.
 
 ## Storefront
+
+Para el starter oficial de Next.js use [`@ia-erp/medusa-mercadopago-storefront`](./storefront): botón de pago y
+página de retorno listos. Si arma su propio storefront:
+
 
 1. Cree la sesión de pago con el proveedor `pp_mercadopago_cl` (SDK de Medusa: `sdk.store.payment.initiatePaymentSession`).
 2. Redirija al comprador a `payment_session.data.approval_url`.
