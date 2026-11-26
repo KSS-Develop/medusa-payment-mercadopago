@@ -4,7 +4,7 @@ import { MedusaError, MedusaService } from "@medusajs/framework/utils"
 import type { Logger } from "@medusajs/framework/types"
 import MercadoPagoConexion from "./models/conexion"
 import { cifrar, claveDesde, descifrar } from "../../lib/cifrado"
-import { esPais } from "../../lib/pais"
+import { PAISES, esPais } from "../../lib/pais"
 import { registro, type CredencialesActivas } from "../../lib/registro"
 
 export type OpcionesConexion = {
@@ -20,6 +20,7 @@ const RENOVAR_ANTES_MS = 30 * 24 * 3600_000
 export type EstadoConexion = {
   pais: string
   conectada: boolean
+  modo: "oauth" | "propia" | null
   user_id: string | null
   live_mode: boolean
   expira_en: Date | null
@@ -32,6 +33,8 @@ type Fila = {
   access_token: string | null
   refresh_token: string | null
   sello: string | null
+  modo: string
+  webhook_secret: string | null
   public_key: string | null
   expira_en: Date | null
   live_mode: boolean
@@ -98,6 +101,7 @@ class MercadoPagoConexionService extends MedusaService({ MercadoPagoConexion }) 
     return filas.map((f) => ({
       pais: f.pais,
       conectada: !!f.access_token,
+      modo: f.access_token ? (f.modo === "propia" ? "propia" : "oauth") : null,
       user_id: f.user_id,
       live_mode: f.live_mode,
       expira_en: f.expira_en,
@@ -157,8 +161,65 @@ class MercadoPagoConexionService extends MedusaService({ MercadoPagoConexion }) 
       throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, `Mercado Pago no entregó las llaves (${t.error ?? r.status})`)
     }
     if (t.pais && t.pais !== f.pais) throw new MedusaError(MedusaError.Types.NOT_ALLOWED, "País de la conexión distinto")
-    await this.guardarTokens(f, t, { origen, pendiente_estado: null, pendiente_verificador: null, pendiente_hasta: null })
+    const ok = await this.guardarTokens(f, t, { origen, pendiente_estado: null, pendiente_verificador: null, pendiente_hasta: null })
+    if (!ok) throw new MedusaError(MedusaError.Types.CONFLICT, "La conexión de ese país cambió mientras se conectaba; vuelva a intentarlo")
     return (await this.estados()).find((e) => e.pais === f.pais)!
+  }
+
+  // Guía paso a paso: la tienda creó su propia aplicación en Mercado Pago y pega sus llaves en el admin.
+  // Se comprueba con Mercado Pago que el Access Token sirva y que la cuenta sea del país elegido.
+  async guardarPropias(pais: string, accessToken: string, webhookSecret: string, origen: string): Promise<EstadoConexion> {
+    if (!esPais(pais)) throw new MedusaError(MedusaError.Types.INVALID_DATA, `País no soportado: ${pais}`)
+    if (!/^APP_USR-[\w-]{20,200}$/.test(accessToken)) {
+      throw new MedusaError(MedusaError.Types.INVALID_DATA, "El Access Token de producción empieza con APP_USR-")
+    }
+    if (!/^[A-Za-z0-9]{16,128}$/.test(webhookSecret)) {
+      throw new MedusaError(MedusaError.Types.INVALID_DATA, "La clave secreta de webhooks no tiene el formato esperado")
+    }
+    const r = await fetch("https://api.mercadopago.com/users/me", {
+      headers: { authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(10000),
+    })
+    const yo = (await r.json().catch(() => ({}))) as { id?: number; site_id?: string }
+    if (!r.ok || !yo.id) {
+      throw new MedusaError(MedusaError.Types.INVALID_DATA, "Mercado Pago no reconoció el Access Token")
+    }
+    if (yo.site_id !== PAISES[pais].site_id) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `Esa cuenta de Mercado Pago es de ${yo.site_id}, no de ${pais}: use una aplicación creada en la cuenta de ${pais}`
+      )
+    }
+    const datos = {
+      modo: "propia",
+      access_token: cifrar(this.clave_, accessToken),
+      webhook_secret: cifrar(this.clave_, webhookSecret),
+      refresh_token: null,
+      sello: null,
+      user_id: String(yo.id),
+      live_mode: true,
+      expira_en: null,
+      origen,
+      pendiente_estado: null,
+      pendiente_verificador: null,
+      pendiente_hasta: null,
+    }
+    const f = await this.fila(pais)
+    if (f?.access_token && f.modo !== "propia") {
+      throw new MedusaError(MedusaError.Types.NOT_ALLOWED, `Mercado Pago ${pais} ya está conectado: desconéctelo antes de usar otra aplicación`)
+    }
+    if (f) await this.updateMercadoPagoConexions({ id: f.id, ...datos })
+    else {
+      try {
+        await this.createMercadoPagoConexions({ pais, ...datos })
+      } catch {
+        const g = await this.fila(pais)
+        if (!g) throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, "No se pudieron guardar las llaves")
+        await this.updateMercadoPagoConexions({ id: g.id, ...datos })
+      }
+    }
+    this.cache_.delete(pais)
+    return (await this.estados()).find((e) => e.pais === pais)!
   }
 
   async desconectar(pais: string): Promise<void> {
@@ -167,12 +228,21 @@ class MercadoPagoConexionService extends MedusaService({ MercadoPagoConexion }) 
     this.cache_.delete(pais)
   }
 
-  private async guardarTokens(f: Fila, t: Tokens, extra: Partial<Fila> = {}): Promise<void> {
+  private async guardarTokens(f: Fila, t: Tokens, extra: Partial<Fila> = {}): Promise<boolean> {
+    // Si mientras se hablaba con Mercado Pago la fila cambió (llaves propias pegadas, o otra renovación), no se pisa.
+    const actual = await this.fila(f.pais)
+    if (!actual || actual.modo === "propia" || actual.access_token !== f.access_token) {
+      this.logger_.warn(`Mercado Pago ${f.pais}: la conexión cambió mientras se guardaban llaves nuevas; se conserva la actual`)
+      this.cache_.delete(f.pais)
+      return false
+    }
     await this.updateMercadoPagoConexions({
       id: f.id,
       access_token: cifrar(this.clave_, t.access_token),
       refresh_token: t.refresh_token ? cifrar(this.clave_, t.refresh_token) : f.refresh_token,
       sello: t.sello ? cifrar(this.clave_, t.sello) : f.sello,
+      modo: "oauth",
+      webhook_secret: null,
       public_key: t.public_key ?? f.public_key,
       user_id: t.user_id !== undefined ? String(t.user_id) : f.user_id,
       live_mode: t.live_mode ?? f.live_mode,
@@ -180,6 +250,7 @@ class MercadoPagoConexionService extends MedusaService({ MercadoPagoConexion }) 
       ...extra,
     })
     this.cache_.delete(f.pais)
+    return true
   }
 
   // Lo usa el proveedor de pago. Renueva la llave cuando le quedan menos de 30 días; una sola renovación a la vez.
@@ -208,7 +279,18 @@ class MercadoPagoConexionService extends MedusaService({ MercadoPagoConexion }) 
     if (f.refresh_token && f.sello && f.expira_en && f.expira_en.getTime() - Date.now() < RENOVAR_ANTES_MS) {
       access = (await this.renovar(f)) ?? access
     }
-    const valor = { access_token: access, origen: f.origen ?? undefined }
+    let secreto: string | undefined
+    if (f.modo === "propia" && f.webhook_secret) {
+      try {
+        secreto = descifrar(this.clave_, f.webhook_secret)
+      } catch {
+        throw new MedusaError(
+          MedusaError.Types.NOT_ALLOWED,
+          `Mercado Pago ${pais}: no se pudo leer la clave secreta guardada (¿cambió MP_CONEXION_CLAVE?). Vuelva a pegar las llaves.`
+        )
+      }
+    }
+    const valor = { access_token: access, origen: f.origen ?? undefined, webhook_secret: secreto }
     this.cache_.set(pais, { valor, hasta: Date.now() + 60_000 })
     return valor
   }
@@ -227,8 +309,9 @@ class MercadoPagoConexionService extends MedusaService({ MercadoPagoConexion }) 
       })
       const t = (await r.json().catch(() => ({}))) as Tokens
       if (r.ok && t.access_token) {
-        await this.guardarTokens(f, t)
-        return t.access_token
+        if (await this.guardarTokens(f, t)) return t.access_token
+        const g = await this.fila(f.pais)
+        return g?.access_token ? descifrar(this.clave_, g.access_token) : null
       }
       // Otro proceso pudo renovar primero con el mismo refresh_token: se relee la fila.
       const g = await this.fila(f.pais)

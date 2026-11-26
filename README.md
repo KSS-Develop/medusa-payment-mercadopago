@@ -70,11 +70,19 @@ cuenta y guarda el secreto de la aplicación de IA ERP en Mercado Pago (no
 almacena llaves: viajan cifradas y sólo las descifra la tienda que inició la conexión). Su código
 está en `broker/`.
 
-### Con llaves propias (sin «Conectar»)
+### Con la aplicación propia de la tienda (todos los países)
 
-Si prefiere usar las credenciales de su propia aplicación de Mercado Pago, agregue `access_token` (`APP_USR-…`) y
-`webhook_secret` a las opciones del proveedor, configure el webhook en el panel de Mercado Pago (ver «Webhook») y
-omita el módulo `mercadopago-conexion`.
+En **Configuración → Mercado Pago → Usar mi aplicación** el admin muestra, para cada país, los pasos para crear una
+aplicación en Mercado Pago Developers con la cuenta de la tienda, la URL de webhook que hay que pegar en su panel y
+dos campos: **Access Token** de producción y **clave secreta de webhooks**. Al guardar se comprueba con Mercado Pago
+que la llave funcione y que la cuenta sea del país elegido; las llaves quedan cifradas y los avisos de pago exigen la
+firma. Sirve en todos los países, sin depender de la aplicación de IA ERP, y la comisión del Partners Program se
+cuenta igual porque el plugin envía el Integrator ID de IA ERP en cada pago.
+
+### Llaves en medusa-config (sin admin)
+
+También se pueden poner `access_token` (`APP_USR-…`) y `webhook_secret` en las opciones del proveedor y configurar el
+webhook en el panel de Mercado Pago (ver «Webhook»); en ese caso el módulo `mercadopago-conexion` es opcional.
 
 ### Opciones
 

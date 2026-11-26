@@ -3,6 +3,7 @@ import { MedusaError } from "@medusajs/framework/utils"
 import { MERCADOPAGO_CONEXION } from "../../../modules/mercadopago-conexion"
 import type MercadoPagoConexionService from "../../../modules/mercadopago-conexion/service"
 import { PAISES, esPais } from "../../../lib/pais"
+import { origenBackend, urlWebhook } from "../../../lib/origen"
 
 // Estado de las conexiones por país (sin llaves).
 export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
@@ -12,6 +13,8 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
     paises: Object.keys(PAISES).map((pais) => ({
       ...(estados.find((e) => e.pais === pais) ?? { pais, conectada: false }),
       conectable: conectables.includes(pais),
+      // Para la guía de la aplicación propia: la URL que se pega en Webhooks del panel de Mercado Pago.
+      webhook_url: urlWebhook(origenBackend(req), pais),
     })),
   })
 }

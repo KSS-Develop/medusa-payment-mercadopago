@@ -9,6 +9,10 @@ const MercadoPagoConexion = model.define("mercadopago_conexion", {
   refresh_token: model.text().nullable(),
   // Sello del intermediario que autoriza renovar con este refresh_token.
   sello: model.text().nullable(),
+  // «oauth» (Conectar con Mercado Pago) o «propia» (llaves de la aplicación de la tienda, pegadas en el admin).
+  modo: model.text().default("oauth"),
+  // Clave secreta de webhooks de la aplicación propia (cifrada).
+  webhook_secret: model.text().nullable(),
   public_key: model.text().nullable(),
   expira_en: model.dateTime().nullable(),
   live_mode: model.boolean().default(true),

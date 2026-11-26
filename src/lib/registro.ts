@@ -5,6 +5,8 @@ export type CredencialesActivas = {
   access_token: string
   // Origen público del backend (https://…), para armar la URL del webhook de cada preferencia.
   origen?: string
+  // Clave de webhooks de la aplicación propia de la tienda (modo «propia»): con ella se exige la firma.
+  webhook_secret?: string
 }
 
 export interface FuenteDeCredenciales {

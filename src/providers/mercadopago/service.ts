@@ -483,9 +483,20 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
     const dataId = cuerpo.data?.id !== undefined ? String(cuerpo.data.id) : undefined
     // merchant_order, avisos IPN viejos y otros tópicos no traen data.id de un pago: se ignoran sin ruido.
     if (tipo !== "payment" || !dataId || !/^\d{1,20}$/.test(dataId)) return { action: PaymentActions.NOT_SUPPORTED }
+    // La clave puede venir de la configuración o de la aplicación propia guardada en el admin.
+    let secretoFirma = this.options_.webhook_secret
+    if (!secretoFirma && !this.options_.access_token) {
+      try {
+        secretoFirma = (await registro.fuente?.credenciales(this.options_.country))?.webhook_secret
+      } catch (e) {
+        // Sin poder leer las llaves guardadas no se acepta el aviso (el pago se confirmará al volver el comprador).
+        this.logger_.warn(`Mercado Pago: aviso del pago ${dataId} ignorado (${e instanceof Error ? e.message : "error"})`)
+        return { action: PaymentActions.NOT_SUPPORTED }
+      }
+    }
     // Sin firma (cuenta conectada) se limita la relectura: el mismo aviso (pago + acción) se atiende una vez cada 2 s.
     const clave = `${dataId}:${(cuerpo as { action?: string }).action ?? ""}`
-    if (!this.options_.webhook_secret && (this.vistos_.get(clave) ?? 0) > Date.now()) {
+    if (!secretoFirma && (this.vistos_.get(clave) ?? 0) > Date.now()) {
       return { action: PaymentActions.NOT_SUPPORTED }
     }
     const encabezado = (n: string): string | undefined => {
@@ -495,9 +506,9 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
     // Con webhook_secret se exige la firma. Sin él (cuenta conectada) no hay secreto propio que verificar: el aviso
     // sólo sirve de señal y el pago, su sesión y su monto se leen siempre de la API con la llave del vendedor.
     const ok =
-      !this.options_.webhook_secret ||
+      !secretoFirma ||
       firmaValida({
-        secreto: this.options_.webhook_secret,
+        secreto: secretoFirma,
         encabezado: encabezado("x-signature"),
         requestId: encabezado("x-request-id"),
         dataId,
@@ -509,7 +520,7 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
     let pago: PaymentResponse
     try {
       pago = await (await this.sdk()).pagos.get({ id: dataId })
-      if (!this.options_.webhook_secret) {
+      if (!secretoFirma) {
         const ahora = Date.now()
         this.vistos_.set(clave, ahora + 2_000)
         if (this.vistos_.size > 5000) for (const [k, v] of this.vistos_) if (v < ahora) this.vistos_.delete(k)
