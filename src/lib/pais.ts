@@ -1,21 +1,21 @@
 // Datos de cada país de Mercado Pago soportado. El país sólo fija la moneda admitida y el sitio;
 // los medios de pago los muestra Checkout Pro según la cuenta del vendedor.
 
-export type Pais = "CL" | "BR" | "AR"
-
-export type DatosPais = {
-  site_id: "MLC" | "MLB" | "MLA"
-  moneda: "clp" | "brl" | "ars"
-}
-
-export const PAISES: Record<Pais, DatosPais> = {
-  CL: { site_id: "MLC", moneda: "clp" },
-  BR: { site_id: "MLB", moneda: "brl" },
+export const PAISES = {
   AR: { site_id: "MLA", moneda: "ars" },
-}
+  BR: { site_id: "MLB", moneda: "brl" },
+  CL: { site_id: "MLC", moneda: "clp" },
+  CO: { site_id: "MCO", moneda: "cop" },
+  MX: { site_id: "MLM", moneda: "mxn" },
+  PE: { site_id: "MPE", moneda: "pen" },
+  UY: { site_id: "MLU", moneda: "uyu" },
+} as const
+
+export type Pais = keyof typeof PAISES
+export type DatosPais = (typeof PAISES)[Pais]
 
 export function esPais(valor: string): valor is Pais {
-  return valor === "CL" || valor === "BR" || valor === "AR"
+  return Object.prototype.hasOwnProperty.call(PAISES, valor)
 }
 
 // Integrator ID de IA ERP en el Partners Program de Mercado Pago (Checkout Pro certificado).

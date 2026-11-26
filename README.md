@@ -2,16 +2,16 @@
 
 [![npm](https://img.shields.io/npm/v/@ia-erp/medusa-payment-mercadopago)](https://www.npmjs.com/package/@ia-erp/medusa-payment-mercadopago) [![CI](https://github.com/KSS-Develop/medusa-payment-mercadopago/actions/workflows/ci.yml/badge.svg)](https://github.com/KSS-Develop/medusa-payment-mercadopago/actions/workflows/ci.yml)
 
-Mercado Pago **Checkout Pro** para **Medusa v2**: Chile, Brasil y Argentina en un solo paquete. Hecho por
+Mercado Pago **Checkout Pro** para **Medusa v2**: Argentina, Brasil, Chile, Colombia, México, Perú y Uruguay en un solo paquete. Hecho por
 [IA ERP](https://ia-erp.cl), desarrollador certificado de Mercado Pago (Partners Program, Checkout Pro).
 
-- Un proveedor por país, cada uno con las credenciales de su cuenta (`mercadopago_cl`, `mercadopago_br`, `mercadopago_ar`).
+- Un proveedor por país, cada uno con las credenciales de su cuenta (`mercadopago_cl`, `mercadopago_br`, `mercadopago_ar`, …).
 - Checkout Pro muestra los medios de cada país: tarjetas y cuotas, débito, PIX en Brasil, efectivo donde exista.
 - Webhooks verificados con la firma `x-signature` de Mercado Pago, sobre el webhook nativo de Medusa.
 - Reembolsos totales y parciales, anulación de pagos pendientes, montos según los decimales de cada moneda (CLP sin decimales).
 - Compra como invitado: no necesita cliente registrado.
 
-> **English.** Mercado Pago Checkout Pro payment provider for Medusa v2 (Chile, Brazil and Argentina), one
+> **English.** Mercado Pago Checkout Pro payment provider for Medusa v2 (Argentina, Brazil, Chile, Colombia, Mexico, Peru and Uruguay), one
 > provider per country, signed webhooks (`x-signature`), full and partial refunds, amount and currency checks
 > before authorizing. Built and maintained by IA ERP, a certified Mercado Pago Partners developer.
 
@@ -40,21 +40,21 @@ modules: [
             max_installments: 12,
           },
         },
-        // Brasil y Argentina: el mismo proveedor con id "br"/"ar", country "BR"/"AR" y sus credenciales.
+        // Otros países: el mismo proveedor con id "br", "ar", "mx"… y country "BR", "AR", "MX"… con sus credenciales.
       ],
     },
   },
 ],
 ```
 
-Luego habilite **Mercado Pago (`pp_mercadopago_cl`)** en la región de Chile desde el panel de Medusa. La región debe
-cobrar en CLP (BRL para Brasil, ARS para Argentina).
+Luego habilite **Mercado Pago (`pp_mercadopago_cl`)** en la región de Chile desde el panel de Medusa. Cada región debe
+cobrar en la moneda de su país.
 
 ### Opciones
 
 | Opción | Obligatoria | Descripción |
 |---|---|---|
-| `country` | sí | `CL`, `BR` o `AR`. Fija la moneda admitida. |
+| `country` | sí | `AR` (ARS), `BR` (BRL), `CL` (CLP), `CO` (COP), `MX` (MXN), `PE` (PEN) o `UY` (UYU). Fija la moneda admitida. |
 | `access_token` | sí | Access Token de producción de la aplicación (empieza con `APP_USR-`). |
 | `webhook_secret` | sí | Clave secreta de webhooks de la aplicación. |
 | `notification_url` | no | URL del webhook enviada en cada preferencia (se le agrega `source_news=webhooks`). Lo recomendado es configurarla en el panel; ver «Webhook». |
@@ -71,6 +71,23 @@ En el panel de Mercado Pago (Tus integraciones → la aplicación → Webhooks) 
 `https://<backend>/hooks/payment/mercadopago_cl` con el evento **Pagos** y copie la clave secreta en
 `webhook_secret`. Medusa responde 200 y procesa el aviso unos segundos después; el pago aprobado completa el carro
 aunque el comprador no vuelva a la tienda.
+
+## Probado
+
+Compras reales en el ambiente de pruebas de Mercado Pago (Checkout Pro, comprador de prueba de cada país), noviembre de 2026:
+
+| País | Pago con tarjeta | Otros casos |
+|---|---|---|
+| Chile | CLP, aprobado | certificación Checkout Pro |
+| Brasil | BRL 129,90, aprobado | |
+| Argentina | ARS 15.999,50, aprobado | 3 cuotas con interés (el comprador paga 19.149,80; se valida el precio de 15.999,50); Rapipago queda pendiente |
+| México | MXN 499,99 en 3 cuotas, aprobado | |
+| Colombia | COP 89.900, aprobado | |
+| Perú | PEN 149,90, aprobado | |
+| Uruguay | UYU 1.290,50, aprobado | |
+
+En todos se verificó la autorización (monto y moneda) y el aviso firmado. Los reembolsos y anulaciones no se pueden
+probar con cuentas de prueba: Mercado Pago los rechaza con «Unauthorized use of live credentials».
 
 ## Seguridad del cobro
 

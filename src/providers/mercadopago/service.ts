@@ -39,7 +39,7 @@ import { INTEGRATOR_ID_IA_ERP, PAISES, esPais, type Pais } from "../../lib/pais"
 type InjectedDependencies = { logger: Logger }
 
 export type Options = {
-  // País de la cuenta de Mercado Pago: "CL", "BR" o "AR".
+  // País de la cuenta de Mercado Pago: AR, BR, CL, CO, MX, PE o UY.
   country: Pais
   // Access Token de producción de la cuenta del vendedor (empieza con APP_USR-).
   access_token: string
@@ -129,7 +129,7 @@ class MercadoPagoProviderService extends AbstractPaymentProvider<Options> {
       throw new MedusaError(MedusaError.Types.INVALID_DATA, `Mercado Pago: faltan opciones ${faltan.join(", ")}`)
     }
     if (!esPais(String(options.country))) {
-      throw new MedusaError(MedusaError.Types.INVALID_DATA, "Mercado Pago: country debe ser CL, BR o AR")
+      throw new MedusaError(MedusaError.Types.INVALID_DATA, `Mercado Pago: country debe ser uno de ${Object.keys(PAISES).join(", ")}`)
     }
   }
 
